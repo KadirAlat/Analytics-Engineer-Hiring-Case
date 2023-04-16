@@ -1,6 +1,6 @@
 ## justDice Analytics Engineer Hiring Case
 
-### First of all you can open the report via the link below:
+### You can open the report via the link below:
 
 #### https://kadiralat-analitic-engineer-task-main-z0hhp6.streamlit.app/
 
