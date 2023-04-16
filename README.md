@@ -34,6 +34,6 @@ However, in another scenario installing the same app twice on the same day, netw
 
 ```python
 print("installs.loc[(installs['country_id']==1) & (installs['app_id']==71)& (installs['network_id']==60) & (installs['event_date']=='2022-08-20') & (installs['device_os_version']=='12') ])
-
+```
 
 For an example input we can see that under the same conditions, different installation IDs are also generated. So yes the duplication in the installs data frame is a mistake.<br>
