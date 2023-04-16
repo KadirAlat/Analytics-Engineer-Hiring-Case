@@ -30,7 +30,7 @@ For Adspending there is no duplication<br>
 For Payouts and Revenue, there are duplications but when the CSV file is examinated,<br>
 it can be seen that there are also different payout prices for the same day and same installation_id.<br>
 That means there can be many charges or revenues for the same day so,<br>
-duplications sould not be removed from dataframes for payouts and revenue.<br><br><br>
+duplications sould not be removed from dataframes for payouts and revenue.<br>
 
 For Installation:<br>
 There is only one duplication in installs dataframe<br>
@@ -46,23 +46,23 @@ So that, if the user installs a specific app twice in his/her phone throughout s
 can be generated.(Numerically it is possible and more unique install_id can be generated than install.csv already has)<br>
 Hypothesis 1: Each unique country_id-app_id-network_id-event_date-device_os_version combination generates a unique installation_id.<br>
 It can be tested by asking the question:<br>
-(q1)Is there anymore installation_id's under same condition as the duplicated installation_id? <br>
+####(q1)Is there anymore installation_id's under same condition as the duplicated installation_id? <br>
 If the answer is yes, hypothesis 1 becomes false. If the answer is no, it still cannot be said that hypothesis 1 is true.<br>
 That just means that there is no extra data according to duplicated data's condition.<br><br><br>
 Additionally these questions should be asked:<br><br>
-(q2)How many unique add_ip-network_id-event_date-country_id combination are there?<br>
-(q3)How many unique install_id's are generated under same conditions?<br>
+####(q2)How many unique add_ip-network_id-event_date-country_id combination are there?<br>
+####(q3)How many unique install_id's are generated under same conditions?<br>
 Then the probability of truth of hypothesis 1 can be calculated.<br>
 
-q1: Yes, there are 8 output and 2 of installation_id are same so, Hypothesis 1 is false according to output of:<br>
+####q1: Yes, there are 8 output and 2 of installation_id are same so, Hypothesis 1 is false according to output of:<br>
 ```python
 print("installs.loc[(installs['country_id']==1) & (installs['app_id']==71)
       & (installs['network_id']==60)
       & (installs['event_date']=='2022-08-20') & (installs['device_os_version']=='12') ])
 ```      
-If q1's answer was no, q2-q3 can be asked and answers can be found as below:     <br>
+If q1's answer was no, q2-q3 can be asked and answers can be found as below: <br>
 
-q2-q3 : There are 67986 unique combinations and in average every unique combination has 3 installation id :<br>
+####q2-q3 : There are 67986 unique combinations and in average every unique combination has 3 installation id :<br>
 ```python
 x= installs.groupby(['app_id','network_id','event_date','device_os_version','country_id'])['install_id'].count().reset_index(name='count').sort_values(['count'],ascending=False)
 print(len(x)) -> 67986
