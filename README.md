@@ -4,7 +4,14 @@
 
 #### https://kadiralat-analitic-engineer-task-main-z0hhp6.streamlit.app/
 
-### Notes
+### Technologies Used In This Task:
+
+⋅⋅* Streamlit
+⋅⋅* AWS S3
+⋅⋅* Boto3
+⋅⋅* Plotly
+⋅* Prophet
+⋅* Pandas
 
 #### NOTE 1
 
