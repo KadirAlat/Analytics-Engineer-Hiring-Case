@@ -6,12 +6,12 @@
 
 ### Technologies Used In This Task:
 
-⋅⋅* Streamlit
-⋅⋅* AWS S3
-⋅⋅* Boto3
-⋅⋅* Plotly
-⋅* Prophet
-⋅* Pandas
++ Streamlit
++ AWS S3
++ Boto3
++ Plotly
++ Prophet
++ Pandas
 
 #### NOTE 1
 
