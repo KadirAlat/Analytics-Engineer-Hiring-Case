@@ -37,3 +37,23 @@ print("installs.loc[(installs['country_id']==1) & (installs['app_id']==71)& (ins
 ```
 
 For an example input we can see that under the same conditions, different installation IDs are also generated. So yes the duplication in the installs data frame is a mistake.<br>
+
+#### NOTE 2
+
+The data in the similarity tables includes the apps that have more than 30 installations throughout 2022.<br>
+
+#### NOTE 3
+
+The fees that justDice pays to Mediums for acquiring users, don't have to be paid in the same day as users install justDice products.<br>
+
+#### NOTE 4
+
+I assumed that justDice advertises its products on Medium 10 and Medium 60. However, Partner apps also can be installed on Medium 10 and Medium 60.<br>
+
+#### NOTE 5
+Partner apps are installed on Medium 1111 and Medium 26. Howeveer justDice also shows their other products in their own apps.<br>
+
+
+
+
+
