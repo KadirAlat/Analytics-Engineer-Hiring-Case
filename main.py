@@ -15,7 +15,6 @@ import boto3
 from dotenv import load_dotenv
 import os
 
-
 # Streamlit Page Setting
 st.set_page_config(layout="wide")
 with open('style.css') as f:
@@ -24,7 +23,6 @@ with open('style.css') as f:
 warnings.simplefilter(action='ignore', category=FutureWarning)
 # load .env file for aws credentials
 load_dotenv()
-
 
 os.environ["AWS_ACCESS_KEY_ID"]=st.secrets["AWS_ACCESS_KEY_ID"]
 os.environ["AWS_SECRET_ACCESS_KEY"]=st.secrets["AWS_SECRET_ACCESS_KEY"]
@@ -51,6 +49,35 @@ def read_aws_data(data_object,dataframe_name):
     print("\n")
     return return_df
 
+def squeeze_medium_data(dataframe,app_list,squeezed_param,app_param,network_id):
+    squeezed_df = dataframe.loc[dataframe['network_id']==network_id]
+    for value in app_list:
+        squeezed_df.loc[squeezed_df[app_param] == value, squeezed_param] = squeezed_df.loc[squeezed_df[app_param]==value,squeezed_param].div(squeezed_df.loc[squeezed_df[app_param]==value,squeezed_param].max() if squeezed_df.loc[squeezed_df[app_param]==value,squeezed_param].max() != 0 else 1)
+    return squeezed_df
+
+def create_similarity_graph_df(jd_daily_installation_count_app_mediums,jd_installs_df,installation_squeezed,adspend_squeezed,medium):
+    graph_similarity_dict = {'app_id': [], 'graph_similarity_metric': []}
+    medium_data = jd_daily_installation_count_app_mediums.loc[jd_daily_installation_count_app_mediums['network_id'] == medium]
+    daily_app_count = medium_data.groupby(['app_id', 'event_date'])['total_installation'].sum().reset_index(name='total_installation')
+    eliminate_unused_app = daily_app_count.loc[daily_app_count['total_installation'] > 1]
+    rest_of_apps = eliminate_unused_app.groupby(['app_id'])['total_installation'].count().reset_index(name='count')
+    apps_with_high_count = rest_of_apps.loc[rest_of_apps['count'] > 30]
+    app_count_df = jd_installs_df.loc[jd_installs_df['network_id'] == medium]
+    app_count_df = app_count_df.groupby(['app_id'])['install_id'].count().reset_index(name='count')
+    for name in apps_with_high_count['app_id']:
+        temp1 = installation_squeezed.loc[installation_squeezed['app_id'] == name].iloc[:, [0, 3]]
+        temp2 = adspend_squeezed.loc[adspend_squeezed['client_id'] == name].iloc[:, [0, 3]]
+        temp3 = pd.merge(temp1, temp2, on='event_date')
+        temp3['difference'] = abs(temp3['total_installation'] - temp3['value_usd'])
+        result = round(100 - (temp3['difference'].sum() * 100) / 365, 2)
+        graph_similarity_dict['app_id'].append(name)
+        graph_similarity_dict['graph_similarity_metric'].append(result)
+    similarity_graph_df = pd.DataFrame(graph_similarity_dict)
+    similarity_graph_df = similarity_graph_df.merge(app_count_df, on='app_id')
+    similarity_graph_df = similarity_graph_df.sort_values(by='graph_similarity_metric', ascending=False)
+    return similarity_graph_df
+
+
 obj_adspend = s_3.Bucket('dataset-bucket-s3-demo').Object('adspend.csv').get()
 obj_installs = s_3.Bucket('dataset-bucket-s3-demo').Object('installs.csv').get()
 obj_payouts = s_3.Bucket('dataset-bucket-s3-demo').Object('payouts.csv').get()
@@ -61,13 +88,11 @@ installs_df = read_aws_data(obj_installs, "Installs Data Frame")
 payouts_df = read_aws_data(obj_payouts, "Payouts Data Frame")
 revenue_df = read_aws_data(obj_revenue, "Revenue Data Frame")
 
-
 #Importing CSV files
 #adspend_df = pd.read_csv('adspend.csv')
 #installs_df = pd.read_csv('installs.csv')
 #payouts_df = pd.read_csv('payouts.csv')
 #revenue_df = pd.read_csv('revenue.csv')
-
 
 #splitting installs.csv for justdice apps and partner apps
 jd_installs_df = pd.DataFrame()
@@ -101,22 +126,22 @@ st.markdown("- **Financial Opportunities** includes actions for the future, oppo
 st.subheader("General Information")
 st.markdown("Everyday, justDice apps were installed to the user's devices between 200-1400 times in total (Figure 1). ")
 #Number of different apps
-app_count = len(jd_installs_df['app_id'].unique())
+jd_num_of_diff_apps = len(jd_installs_df['app_id'].unique())
 #Total revenue
-revenue_sum = revenue_df['value_usd'].sum()
+total_revenue = revenue_df['value_usd'].sum()
 #DataFrame for Total number of installation for each day
-installation_count = jd_installs_df.groupby(['event_date'])['install_id'].count().reset_index(name='Installation Count')
-installation_count.rename(columns={'event_date':'Event Date'},inplace=True)
+jd_daily_installation_count = jd_installs_df.groupby(['event_date'])['install_id'].count().reset_index(name='Installation Count')
+jd_daily_installation_count.rename(columns={'event_date':'Event Date'},inplace=True)
 
 r21, r22 = st.columns((7,3))
 
-fig1 = px.line(installation_count,x='Event Date',y='Installation Count')
+fig1 = px.line(jd_daily_installation_count,x='Event Date',y='Installation Count')
 fig1.update_layout(width=800,height=300,margin=dict(l=0, r=0, b=0, t=0))
 r21.plotly_chart(fig1)
 r21.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 1 : Daily justDice Apps Installation Counts for 2022</p>", unsafe_allow_html=True)
-r22.metric(":blue[Total Installations]",'In 2022, users installed justDice apps', ''+str(round(installation_count['Installation Count'].sum()/1000))+'k times')
-r22.metric(str(":blue[Total Products]"),'So far justDice produced',''+str(str(app_count-2)+" Apps"))
-r22.metric(":blue[Total Revenue]",'In 2022 justDice revenued ',str(''+str(round(revenue_sum,2))+'$'))
+r22.metric(":blue[Total Installations]",'In 2022, users installed justDice apps', ''+str(round(jd_daily_installation_count['Installation Count'].sum()/1000))+'k times')
+r22.metric(str(":blue[Total Products]"),'So far justDice produced',''+str(str(jd_num_of_diff_apps-2)+" Apps"))
+r22.metric(":blue[Total Revenue]",'In 2022 justDice revenued ',str(''+str(round(total_revenue,2))+'$'))
 st.markdown("**Conclusion:** When monthly total installations are compared to each, it can be seen that March-April-May has the lowest and August has the highest installation number.")
 
 #Apps Details
@@ -124,16 +149,16 @@ st.subheader("Apps Details")
 st.markdown("Twenty-Seven apps produced by justDice. In this documentation, apps are represented by App IDs like 71,174,121, etc.")
 st.markdown("The popularity percentages of apps are represented in a pie chart (Figure 2).  Also, a table that includes the total number of installations of each app (Figure 3).")
 #DataFrame of Installation counts for each App
-app_count_df = jd_installs_df.groupby(['app_id'])['install_id'].count().reset_index(name='count').sort_values(['count'],ascending=False)
+jd_app_counts = jd_installs_df.groupby(['app_id'])['install_id'].count().reset_index(name='count').sort_values(['count'],ascending=False)
 
 r31, r32 = st.columns((5,5))
 
-app_names = app_count_df.head(5)['app_id'].tolist()
-app_names.append('other')
-app_percentage = app_count_df.head(5)['count'].tolist()
-app_percentage.append(app_count_df.tail(len(app_count_df.index)-5)['count'].sum())
+jd_app_names = jd_app_counts.head(5)['app_id'].tolist()
+jd_app_names.append('other')
+jd_app_trends_percentage = jd_app_counts.head(5)['count'].tolist()
+jd_app_trends_percentage.append(jd_app_counts.tail(len(jd_app_counts.index)-5)['count'].sum())
 pull = [0.1,0,0,0,0,0]
-fig2 = go.Figure(data=[go.Pie(labels=app_names,values=app_percentage,pull=pull)])
+fig2 = go.Figure(data=[go.Pie(labels=jd_app_names,values=jd_app_trends_percentage,pull=pull)])
 fig2.update_layout(legend={'font': {'size': 15}, },width=500,height=500,margin=dict(l=0, r=0, b=0, t=50), autosize=False)
 fig2.update_traces(textfont_size=20)
 r31.markdown('**Percentage of Installation for Apps**')
@@ -143,7 +168,7 @@ r31.markdown("<p style='text-align: left;font-style: italic; color: grey;'>Figur
 r32.markdown('**Apps & Installation Counts**')
 fig3 = go.Figure(data=[go.Table(
     header=dict(values=['App ID','Total Installations'],height=30,font_size=15),
-    cells=dict(values=[app_count_df['app_id'],app_count_df['count']],height=30)
+    cells=dict(values=[jd_app_counts['app_id'],jd_app_counts['count']],height=30)
 )])
 fig3.update_layout(height=450,width=550, margin=dict(l=0, r=0, b=0, t=0),paper_bgcolor='steelblue')
 fig3.update_traces(cells_font=dict(size = 15))
@@ -153,6 +178,7 @@ st.markdown("**Conclusion :** App 174, App 121, and App 94 were the most trendin
 
 #User Acquisition
 st.header('User Acquisition')
+#Mediums
 st.subheader('Mediums')
 
 r41, r42 = st.columns((5,5))
@@ -162,21 +188,20 @@ r41.markdown('There are four mediums: Medium 10, Medium 1111, Medium 26, and Med
 r41.markdown('It is shown how many installations are made by these mediums (Figure 4).')
 r41.markdown("**Conclusion:** Most of the installations were made through Medium 60 (around 50%) and then Medium 26 (around 34%).")
 #Total installation for each medium
-medium_count_df = jd_installs_df.groupby(['network_id'])['install_id'].count().reset_index(name='count')
+jd_medium_usage_counts = jd_installs_df.groupby(['network_id'])['install_id'].count().reset_index(name='count')
 #Converting medium names
-medium_count_df_list1 = medium_count_df['network_id'].tolist()
-medium_count_df_list2 = ['Medium-'+str(x) for x in medium_count_df_list1]
+jd_medium_names_list1 = jd_medium_usage_counts['network_id'].tolist()
+jd_medium_names_list2 = ['Medium-'+str(x) for x in jd_medium_names_list1]
 
 r42.markdown('**Total Installations for Mediums**')
 fig4 = go.Figure(go.Bar(
-    x = medium_count_df['count'],
-    y = medium_count_df_list2,
+    x = jd_medium_usage_counts['count'],
+    y = jd_medium_names_list2,
     orientation='h'
 ))
 fig4.update_layout(height=200,width=600, margin=dict(l=20, r=0, b=0, t=0))
 r42.plotly_chart(fig4)
 r42.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 4 : Mediums & Installation Counts</p>", unsafe_allow_html=True)
-
 
 #Ad Spending for Medium 10 and Medium 60
 st.subheader('Ad Spendings for Medium 10 and Medium 60')
@@ -185,38 +210,34 @@ st.markdown("Ad spending is made for presenting justDice products to users. If t
 st.markdown("To analyze the success of the advertising, the relationship between daily ad spending and daily installation should be considered.")
 st.markdown("In Figure 5 and Figure 6, daily ad spendings and total installation counts can be seen for each app **by clicking the app_id labels double times.**")
 st.subheader(":blue[Medium 10]")
-
+#MEDIUM 10
 r51, r52 = st.columns((5,5))
 
-#ad spending&total installations for each app on medium 10
-adspend_mediums_df = adspend_df.groupby(['event_date','network_id','client_id'])['value_usd'].sum().unstack(fill_value=0).stack().reset_index(name='value_usd')
-installation_count_network_app = jd_installs_df.groupby(['event_date','network_id','app_id'])['install_id'].count().unstack(fill_value=0).stack().reset_index(name='Installation Count')
-installation_count_network_app.rename(columns={'Installation Count':'total_installation'},inplace=True)
+# Daily ad spending and total installations for each app on medium 10
+daily_adspend_amount_app_mediums = adspend_df.groupby(['event_date','network_id','client_id'])['value_usd'].sum().unstack(fill_value=0).stack().reset_index(name='value_usd')
+jd_daily_installation_count_app_mediums = jd_installs_df.groupby(['event_date','network_id','app_id'])['install_id'].count().unstack(fill_value=0).stack().reset_index(name='Installation Count')
+jd_daily_installation_count_app_mediums.rename(columns={'Installation Count':'total_installation'},inplace=True)
 
 r51.markdown('Daily Ad Spendings($)')
-fig5 = px.line(adspend_mediums_df.loc[adspend_mediums_df['network_id']==10],x='event_date',y='value_usd',color='client_id')
+fig5 = px.line(daily_adspend_amount_app_mediums.loc[daily_adspend_amount_app_mediums['network_id']==10],x='event_date',y='value_usd',color='client_id')
 fig5.update_layout(width=600, height=350, margin=dict(l=0, r=0, b=0, t=0))
 r51.plotly_chart(fig5)
 r51.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 5 : Mediums 10 Daily Ad Spendings</p>", unsafe_allow_html=True)
 r52.markdown('Daily Total Installations')
-fig6 = px.line(installation_count_network_app.loc[installation_count_network_app['network_id']==10],x='event_date',y='total_installation',color='app_id')
+fig6 = px.line(jd_daily_installation_count_app_mediums.loc[jd_daily_installation_count_app_mediums['network_id']==10],x='event_date',y='total_installation',color='app_id')
 fig6.update_layout(width=600, height=350, margin=dict(l=0, r=0, b=0, t=0))
 r52.plotly_chart(fig6)
 r52.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 6 : Mediums 10 Daily Installations For Each App</p>", unsafe_allow_html=True)
-
 
 st.markdown("With a cursory observation, it can be seen that for some apps, the Daily Total Installation chart has a similar shape to the  Daily Ad Spending chart.")
 st.markdown("For example, App 94 has similar Daily Ad Spending and Daily Total Installation charts for Medium 10. However, for a more precise understanding, the similarity between Daily Ad Spending and Daily Total Installation charts should be calculated for each app.")
 st.markdown("One of the solutions can be squeezing charts into the value range of 0 to 1 for each day of 2022. The total difference between their values may show the differences between the two charts. Therefore, a similarity rate can be calculated based on how far these values are from each other (Figure 9).")
 st.markdown("**After Squeezing the graphs, they become as Figure 7 and Figure 8: (Double-click to intended app_id in each graph to clearly see the similarities separately.)**")
 
-adspend_medium10_squeezed = adspend_mediums_df.loc[adspend_mediums_df['network_id']==10]
-for value in justdice_apps_list:
-    adspend_medium10_squeezed.loc[adspend_medium10_squeezed['client_id']==value,'value_usd'] = adspend_medium10_squeezed.loc[adspend_medium10_squeezed['client_id']==value,'value_usd'].div(adspend_medium10_squeezed.loc[adspend_medium10_squeezed['client_id']==value,'value_usd'].max() if adspend_medium10_squeezed.loc[adspend_medium10_squeezed['client_id']==value,'value_usd'].max() != 0 else 1)
-#adspend_mediums_squeezed_df['value_usd'] = adspend_mediums_squeezed_df['value_usd'].div(adspend_mediums_squeezed_df['value_usd'].max())
-installation_medium10_squeezed = installation_count_network_app.loc[(installation_count_network_app['network_id']==10)]
-for value in app_count_df['app_id']:
-    installation_medium10_squeezed.loc[installation_medium10_squeezed['app_id']==value,'total_installation'] = installation_medium10_squeezed.loc[installation_medium10_squeezed['app_id']==value,'total_installation'].div(installation_medium10_squeezed.loc[installation_medium10_squeezed['app_id']==value,'total_installation'].max() if installation_medium10_squeezed.loc[installation_medium10_squeezed['app_id']==value,'total_installation'].max() != 0 else 1 )
+#Squeezed Dataframes
+adspend_medium10_squeezed = squeeze_medium_data(daily_adspend_amount_app_mediums,justdice_apps_list,'value_usd','client_id',10)
+installation_medium10_squeezed = squeeze_medium_data(jd_daily_installation_count_app_mediums,justdice_apps_list,'total_installation','app_id',10)
+
 r61, r62 = st.columns((5,5))
 
 r61.markdown('Daily Ad Spendings($)')
@@ -230,40 +251,19 @@ fig8.update_layout(width=600, height=350, margin=dict(l=0, r=0, b=0, t=0))
 r62.plotly_chart(fig8)
 r62.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 8 : Squeezed Mediums 10 Daily Installations For Each App</p>", unsafe_allow_html=True)
 
+similarity_graph_medium10 = create_similarity_graph_df(jd_daily_installation_count_app_mediums,jd_installs_df,installation_medium10_squeezed,adspend_medium10_squeezed,10)
 
-graph_similarity_df = pd.DataFrame()
-graph_similarity_dict = {'app_id':[],'graph_similarity_metric':[]}
-a=installation_count_network_app.loc[installation_count_network_app['network_id']==10]
-b= a.groupby(['app_id','event_date'])['total_installation'].sum().reset_index(name='a')
-c=  b.loc[b['a'] > 1]
-d = c.groupby(['app_id'])['a'].count().reset_index(name='a')
-f = d.loc[d['a']>30]
-app_count_m10_df = jd_installs_df.loc[jd_installs_df['network_id']==10]
-app_count_m10_df=app_count_m10_df.groupby(['app_id'])['install_id'].count().reset_index(name='count')
-for name in f['app_id']:
-    temp1 = installation_medium10_squeezed.loc[installation_medium10_squeezed['app_id']==name].iloc[:,[0,3]]
-    temp2 = adspend_medium10_squeezed.loc[adspend_medium10_squeezed['client_id']==name].iloc[:, [0,3]]
-    temp3 = pd.merge(temp1,temp2,on='event_date')
-    temp3['difference']=abs(temp3['total_installation']-temp3['value_usd'])
-    result = round(100-(temp3['difference'].sum()*100)/365,2)
-    graph_similarity_dict['app_id'].append(name)
-    graph_similarity_dict['graph_similarity_metric'].append(result)
-graph_similarity_df = pd.DataFrame(graph_similarity_dict)
-graph_similarity_df = graph_similarity_df.merge(app_count_m10_df,on='app_id')
-graph_similarity_df=graph_similarity_df.sort_values(by='graph_similarity_metric', ascending=False)
 r71, r72 = st.columns((5,5))
-
 
 r71.markdown('**Similarity Rate Table For Medium 10**')
 fig9 = go.Figure(data=[go.Table(
     header=dict(values=['App ID','Similarity Rate (%)','Total Count'],height=30,font_size=15),
-    cells=dict(values=[graph_similarity_df['app_id'],graph_similarity_df['graph_similarity_metric'],graph_similarity_df['count']],height=30)
+    cells=dict(values=[similarity_graph_medium10['app_id'],similarity_graph_medium10['graph_similarity_metric'],similarity_graph_medium10['count']],height=30)
 )])
 fig9.update_layout(height=450,width=550, margin=dict(l=0, r=0, b=0, t=0),paper_bgcolor='steelblue')
 fig9.update_traces(cells_font=dict(size = 15))
 r71.plotly_chart(fig9)
 r71.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 9 : Similarity Rates Between Daily Ad Spending and Daily Total Installations for Medium 10</p>", unsafe_allow_html=True)
-
 r72.markdown("**Similarity Rate Table - Medium 10**")
 r72.markdown("Similarity rates give an idea of how close these data points are. For this analysis, the default similarity rate is 85%. Similarity rates above 85% show advertisement success, and similarity rates below 85% show advertisements unsuccess. ")
 r72.markdown("The Similarity Rate Table is created by taking differences between data points for each day and then summing them up, after that, it is divided by 365 and taking the percentage of it.")
@@ -274,20 +274,11 @@ r72.markdown("Advertisements were generally successful for medium 10. This succe
 st.markdown("**Conclusion :** Applications with more than a 98% similarity rate can be regarded as chances for the next year to make more advertisements. App 122 has a 99.8% similarity between ad spending and total installation. Also, this app has been installed around 1.2k times (around 5% of total installation for Medium 10) in 2022. App 189 and App 97 are in similar situations. For the next year, the applications with high Similarity Rate and high Total Count on the table for Medium 10 should be advertised more.")
 st.markdown("**Conclusion :** App 94 was the most installed app through Medium 10 . It has quite a number of installations (around 30% of total installation for Medium 10). However, after some specific point, the effects of advertisement on installation number does not change enough as in App 122, App 189, App 97, and App 275. To have an optimum success rate, ad spending can be decreased for apps with a relatively low similarity rate and the ad budget can be allocated for apps with more similarity rate.")
 
-
-
-
+#MEDIUM 60
 st.subheader(":blue[Medium 60]")
 
-adspend_medium60_squeezed = adspend_mediums_df.loc[adspend_mediums_df['network_id']==60]
-for value in justdice_apps_list:
-    adspend_medium60_squeezed.loc[adspend_medium60_squeezed['client_id']==value,'value_usd'] = adspend_medium60_squeezed.loc[adspend_medium60_squeezed['client_id']==value,'value_usd'].div(adspend_medium60_squeezed.loc[adspend_medium60_squeezed['client_id']==value,'value_usd'].max() if adspend_medium60_squeezed.loc[adspend_medium60_squeezed['client_id']==value,'value_usd'].max() != 0 else 1)
-#adspend_mediums_squeezed_df['value_usd'] = adspend_mediums_squeezed_df['value_usd'].div(adspend_mediums_squeezed_df['value_usd'].max())
-installation_medium60_squeezed = installation_count_network_app.loc[(installation_count_network_app['network_id']==60)]
-for value in app_count_df['app_id']:
-    installation_medium60_squeezed.loc[installation_medium60_squeezed['app_id']==value,'total_installation'] = installation_medium60_squeezed.loc[installation_medium60_squeezed['app_id']==value,'total_installation'].div(installation_medium60_squeezed.loc[installation_medium60_squeezed['app_id']==value,'total_installation'].max() if installation_medium60_squeezed.loc[installation_medium60_squeezed['app_id']==value,'total_installation'].max() != 0 else 1 )
-
-
+adspend_medium60_squeezed = squeeze_medium_data(daily_adspend_amount_app_mediums,justdice_apps_list,'value_usd','client_id',60)
+installation_medium60_squeezed = squeeze_medium_data(jd_daily_installation_count_app_mediums,justdice_apps_list,'total_installation','app_id',60)
 
 r81, r82 = st.columns((5,5))
 
@@ -301,42 +292,16 @@ fig11 = px.line(installation_medium60_squeezed,x='event_date',y='total_installat
 fig11.update_layout(width=600, height=350, margin=dict(l=0, r=0, b=0, t=0))
 r82.plotly_chart(fig11)
 r82.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 11 : Squeezed Mediums 60 Daily Installations For Each App</p>", unsafe_allow_html=True)
-
 st.markdown("Just like Medium 10, Medium 60 has also similarity between data points on Daily Ad Spending and Dailty total insatllation tables . Here there are just squeezed versions of tables. Again, Similarity rate table can be created.")
 
-
-graph_similarity_df2 = pd.DataFrame()
-graph_similarity_dict = {'app_id':[],'graph_similarity_metric':[]}
-a=installation_count_network_app.loc[installation_count_network_app['network_id']==60]
-b= a.groupby(['app_id','event_date'])['total_installation'].sum().reset_index(name='a')
-c=  b.loc[b['a'] > 1]
-d = c.groupby(['app_id'])['a'].count().reset_index(name='a')
-f = d.loc[d['a']>30]
-app_count_m60_df = jd_installs_df.loc[jd_installs_df['network_id']==60]
-app_count_m60_df=app_count_m60_df.groupby(['app_id'])['install_id'].count().reset_index(name='count')
-
-
-for name in f['app_id']:
-    temp1 = installation_medium60_squeezed.loc[installation_medium60_squeezed['app_id']==name].iloc[:,[0,3]]
-    temp2 = adspend_medium60_squeezed.loc[adspend_medium60_squeezed['client_id']==name].iloc[:, [0,3]]
-    temp3 = pd.merge(temp1,temp2,on='event_date')
-    temp3['difference']=abs(temp3['total_installation']-temp3['value_usd'])
-    result = round(100-(temp3['difference'].sum()*100)/365,2)
-    graph_similarity_dict['app_id'].append(name)
-    graph_similarity_dict['graph_similarity_metric'].append(result)
-graph_similarity_df2 = pd.DataFrame(graph_similarity_dict)
-graph_similarity_df2 = graph_similarity_df2.merge(app_count_m60_df,on='app_id')
-graph_similarity_df2=graph_similarity_df2.sort_values(by='graph_similarity_metric', ascending=False)
-
+similarity_graph_medium60 = create_similarity_graph_df(jd_daily_installation_count_app_mediums,jd_installs_df,installation_medium60_squeezed,adspend_medium60_squeezed,60)
 
 r91, r92 = st.columns((5,5))
-
-
 
 r91.markdown('**Total Installations for Medium 60**')
 fig12 = go.Figure(data=[go.Table(
     header=dict(values=['App ID','Similarity Rate (%)','Total Count'],height=30,font_size=15),
-    cells=dict(values=[graph_similarity_df2['app_id'],graph_similarity_df2['graph_similarity_metric'],graph_similarity_df2['count']],height=30)
+    cells=dict(values=[similarity_graph_medium60['app_id'],similarity_graph_medium60['graph_similarity_metric'],similarity_graph_medium60['count']],height=30)
 )])
 fig12.update_layout(height=350,width=550, margin=dict(l=0, r=0, b=0, t=0),paper_bgcolor='steelblue')
 fig12.update_traces(cells_font=dict(size = 15))
@@ -344,20 +309,20 @@ r91.plotly_chart(fig12)
 r91.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 12 : Similarity Rates Between Daily Ad Spending and Daily Total Installations for Medium 60</p>", unsafe_allow_html=True)
 r92.markdown("**Similarity Rate Table - Medium 60**")
 r92.markdown("**Conclusion :** Except for App 71 and App 189, general advertising for Medium 60 was successful. App 71 and App 189 had opposite behavior in terms of ad spending amount. ")
-r92.markdown("**Conclusion :** More than 50% of installations were made under a 90% similarity rate. However, there is an opportunity for App 380, App 374, App 302, and App 154. These apps have high similarity rates and relatively high installation counts so, ad spending for App 189 and App 71 might be decreased and extra ad spending budget can be transferred to the apps with high similarity rates and high installation numbers.")
-
-
+r92.markdown("**Conclusion :** More than 50% of installations were made under a 90% similarity rate. However, there is an opportunity for App 380, App 374, App 302, and App 154. These apps have high similarity rates and relatively high installation counts so, ad spending for App 189 and App 71 might be decreased and extra ad spending budget can be transferred to the apps with high similarity rates and high installation numbers.")
 st.markdown("**Additional Conclusions for Medium 10 & Medium 60**")
 st.markdown("There is no ad spending for Medium 1111 and Medium 26. However, some conclusions from Medium 10 and Medium 60 can be useful for further ad spending for these mediums :")
 st.markdown("- For App 71 and App 180, Medium 10 and Medium 60 had different behaviour on ad spending. Ad spending was successful for these apps on Medium 10 but not on the Medium 60.")
 st.markdown("- App 390 has quite a positive proportional relationship with the ad spending on Medium 10 and Medium 60 so, it can be suggested that App 390 can be presented to the users through other mediums.")
 st.markdown("- Users installed justDice products through Medium 26 more than Medium 10 (Figure 4) so, it might be an efficient channel to advertise justDice products.")
 
-
-
+#Financial Opportunities
 
 st.header('Financial Opportunities')
 st.markdown('By taking the right decisions, a positive contribution is made to the financial resources of the company. In the previous section, user acquisition opportunities are shown. However, the country-wise ad spending opportunities, fees, incomes from partner apps, support costs for mobile devices, and revenue predictions should also be taken into account.')
+
+#Country Wise Ad Spending
+
 st.subheader("Country-Wise Ad Spending")
 r101, r102 = st.columns((5,5))
 r101.markdown("In 2022, justDice advertised the products in four countries: Country 1, Country 17, Country 109, and Country 213   (Figure 12).")
@@ -380,18 +345,18 @@ fig13 = fig = go.Figure(
 layout={
         'yaxis': {'title': 'Rate (%)'},
         'xaxis': {'title': 'Countries'}
-
     }
 )
 fig13.update_layout(height=300,width=600, margin=dict(l=0, r=0, b=0, t=0))
 r102.plotly_chart(fig13)
 r102.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 13 : Country-Wise Ad Spending Rate </p>", unsafe_allow_html=True)
 
+#Medium Fees
+
 st.subheader("Medium Fees")
 
 st.markdown("When a user installs one of justDice products through mediums that advertise the products, those mediums charge a fee to the company. The fee amount is determined by the company and it can be increased or decreased according to how much effect the medium has on installation numbers or the user acquisition process.  ")
 st.markdown("In 2022, justDice used Medium 10 and Medium 60 for advertising the products.  There were different amounts of payouts for each app and each medium. For this analysis, the unit payouts for each app on Medium 10 and Medium 60 are shown (Figure 14 and Figure 15). It is fine to have more unit payout for some specific apps that bring users/ installation. On the other hand, some mediums might be underpaid for some specific apps and that might be an opportunity for the next year for acquiring more users.")
-st.markdown("\n\n\n")
 r111, r112 = st.columns((5,5))
 r111.markdown("**:blue[Medium 10]**")
 payouts_grouped_df1 = payouts_df.groupby(['install_id'])['value_usd'].sum().reset_index(name='value_usd')
@@ -415,7 +380,6 @@ fig14.update_layout(height=400,width=550, margin=dict(l=0, r=0, b=0, t=0),paper_
 fig14.update_traces(cells_font=dict(size = 15))
 r111.plotly_chart(fig14)
 r111.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 14 : App ID & Unit Payout Graph for Medium 10 </p>", unsafe_allow_html=True)
-
 
 r112.markdown("**:blue[Medium 60]**")
 payouts_grouped_df2 = payouts_df.groupby(['install_id'])['value_usd'].sum().reset_index(name='value_usd')
@@ -442,9 +406,9 @@ r112.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Fi
 
 st.markdown("**Conclusion :** On Medium 10, App 189, and App 275 have a low unit payout (0.003,0.004) but their installation counts are not low as most of the other products. Additionally, it can be seen that App 189 and App 275 are successfully advertised through Medium 10 (Figure 9). So, the amount of payout fee conditions for App 189 and App 275 should be reconsidered.")
 st.markdown("**Conclusion :** On Medium 60, App 154, and App 380 have a low unit payout (0.047,0.032) but their installation counts are not low as most of the other products and they are successfully advertised through Medium 60 with a high similarity rate (Figure 12).")
-st.markdown("**Conclusion :** App 94 has a high unit fee for Medium 10 and Medium 60.  However, this fee amount become successful for Medium 10 with a high similarity rate between ad spending and total installation number. However, for Medium 60, the unit fee amount might be decreased.")
+st.markdown("**Conclusion :** App 94 has a high unit fee for Medium 10 and Medium 60.  However, this fee amount become successful for Medium 10 with a high similarity rate between ad spending and total installation number. However, for Medium 60, the unit fee amount might be decreased.")
 
-
+#Partner App Incomes
 
 st.subheader("Partner App Incomes")
 st.markdown("When users download justDice products to their mobile devices, they see an option to download partner apps on the screen. When users download the partner apps, the partner apps pay a certain amount of fee to JustDice.")
@@ -454,19 +418,19 @@ r121, r122 = st.columns((5,5))
 r121.markdown("**:blue[Medium 26]**")
 r122.markdown("**:blue[Medium 1111]**")
 for value in [26,1111]:
-    dd =partner_installs_df.loc[partner_installs_df['network_id']==value]
+    partner_install_medium_df =partner_installs_df.loc[partner_installs_df['network_id']==value]
     revenue_group=revenue_df.groupby(['install_id'])['value_usd'].sum().reset_index(name='total_value_usd')
-    dd1 = pd.merge(dd,revenue_group,on='install_id',how='left')
-    dd2=dd1.groupby(['app_id'])['total_value_usd'].sum().reset_index(name='total_value_usd')
-    dd3 = dd1.groupby(['app_id'])['install_id'].count().reset_index(name='count')
-    dd3['total_value_usd'] = dd2['total_value_usd']
-    dd3['unit income'] = dd3['total_value_usd']/dd3['count']
-    dd3 = dd3.sort_values(['unit income'],ascending=False)
+    merge_partner_app_revenue = pd.merge(partner_install_medium_df,revenue_group,on='install_id',how='left')
+    merge_partner_app_revenue_total_value=merge_partner_app_revenue.groupby(['app_id'])['total_value_usd'].sum().reset_index(name='total_value_usd')
+    merge_partner_app_revenue_count = merge_partner_app_revenue.groupby(['app_id'])['install_id'].count().reset_index(name='count')
+    merge_partner_app_revenue_count['total_value_usd'] = merge_partner_app_revenue_total_value['total_value_usd']
+    merge_partner_app_revenue_count['unit income'] = merge_partner_app_revenue_count['total_value_usd']/merge_partner_app_revenue_count['count']
+    merge_partner_app_revenue_count = merge_partner_app_revenue_count.sort_values(['unit income'],ascending=False)
     figx = go.Figure(data=[go.Table(
         header=dict(values=['App Id', 'Total Installation', 'Total Fee', 'Unit Fee'], height=30, font_size=15),
-        cells=dict(values=[dd3['app_id'], dd3['count'],
-                           round(dd3['total_value_usd'], 3),
-                           round(dd3['unit income'], 3)], height=30)
+        cells=dict(values=[merge_partner_app_revenue_count['app_id'], merge_partner_app_revenue_count['count'],
+                           round(merge_partner_app_revenue_count['total_value_usd'], 3),
+                           round(merge_partner_app_revenue_count['unit income'], 3)], height=30)
     )])
     figx.update_layout(height=150, width=550, margin=dict(l=0, r=0, b=0, t=0))
     figx.update_traces(cells_font=dict(size=15))
@@ -477,8 +441,6 @@ for value in [26,1111]:
 
 r121.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 16 : App ID & Unit Fee Graph for Medium 26 </p>", unsafe_allow_html=True)
 r122.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 17 : App ID & Unit Fee Graph for Medium 1111 </p>", unsafe_allow_html=True)
-
-
 st.markdown("**Conclusion:** Although App 408 did not have the highest counts of installations, App 408 brought the highest fees for Medium 26. App 237 and App 277 have almost twice the amount installations of App148 but they are paid half price. As a result, promoting more App408 in justDice apps can generate higher incomes. App 404 and App 405 are in a similar situation.")
 st.markdown("**Conclusion:** Only App 217 was promoted on Medium 1111 and it does not have a high unit fee. Medium 1111 can be a good channel for the promotion of partner apps App 408, App 405, and App 404  with high unit fees for the next year.")
 
@@ -487,12 +449,11 @@ st.markdown("**Conclusion:** Only App 217 was promoted on Medium 1111 and it doe
 st.subheader('OS Compatability')
 st.markdown("When users install an application to their mobile device, that application must be compatible with the device. Every year, with the developing technology, operating systems are updated and new versions are released like justDice products. Since some users use older operating systems, apps also need to be compatible with older systems. It is not an easy process for employees to make applications compatible with all operating systems and the company may stop its support on some older operating systems in order to make applications compatible with newly released operating systems.")
 st.markdown("For 2022, the graph of how many different apps were used on which operating systems can be seen (Figure 18). The revenue rate of justDice over operating systems can also be seen (Figure 19).")
-os_n = jd_installs_df.groupby(['app_id','device_os_version'])['install_id'].count().reset_index(name='count').sort_values(['app_id'],ascending=False)
-os_n['app_id'] = 'App-'+os_n['app_id'].apply(str)
-print(os_n['app_id'].unique())
-os_n['device_os_version'] = os_n['device_os_version'].str.split('.').str[0]+'.x'
-print(os_n)
-os_total_download = os_n.groupby(['app_id','device_os_version']).count().reset_index()
+os_app_counts = jd_installs_df.groupby(['app_id','device_os_version'])['install_id'].count().reset_index(name='count').sort_values(['app_id'],ascending=False)
+os_app_counts['app_id'] = 'App-'+os_app_counts['app_id'].apply(str)
+print(os_app_counts['app_id'].unique())
+os_app_counts['device_os_version'] = os_app_counts['device_os_version'].str.split('.').str[0]+'.x'
+os_total_download = os_app_counts.groupby(['app_id','device_os_version']).count().reset_index()
 os_names = os_total_download['device_os_version'].unique()
 temp_df = pd.DataFrame()
 for os in os_names:
@@ -530,7 +491,6 @@ fig17 = go.Figure(
 layout={
         'yaxis': {'title': 'Revenue Percent (%)'},
         'xaxis': {'title': 'OS Versions'}
-
     }
 )
 r132.markdown('**Revenue Sharing(%) / OS Version**')
@@ -540,14 +500,14 @@ r132.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Fi
 
 st.markdown("**Conclusion:** It takes some time for the latest operating system versions to become widespread. Therefore, the numbers for new operating system versions like 15.x and 16.x can be ignored. However, it can be seen that not all justDice apps were installed in the old OS versions such as 5.x and 6.x (Figure 18). That might mean that these apps are not compatible with 5.x and 6.x OS or the company stop supporting these apps for 5.x and 6.x OS.")
 st.markdown("**Conclusion:** The biggest part of justDice's profit comes from 12.x operating system. That means the contribution to the profit of the company increases as operating systems move from the old ones to the new ones (Figure 19).")
-st.markdown("In order to decide which operating systems' support should be reduced or stopped for which apps, it should be analyzed that how often the applications are used in the operating systems. In Figure 20, which applications are used and how often for each operating system can be examined.")
+st.markdown("In order to decide which operating systems' support should be reduced or stopped for which apps, it should be analyzed that how often the applications are used in the operating systems. In Figure 20, which applications are used and how often for each operating system can be examined.")
 
 
-figx = px.histogram(os_n, x=os_n['app_id'], y=os_n['count'],
-             color=os_n['device_os_version'], barmode='group',
+fig20 = px.histogram(os_app_counts, x=os_app_counts['app_id'], y=os_app_counts['count'],
+             color=os_app_counts['device_os_version'], barmode='group',
              height=400,
                     width=1200)
-st.plotly_chart(figx)
+st.plotly_chart(fig20)
 st.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 20: OS Versions & Installed Apps Graph </p>", unsafe_allow_html=True)
 
 st.markdown("If the number of installations of the apps is not high enough for the old operating systems, justDice may stop the operating system support for these apps and focus on the compatibility of the apps with the new operating systems.")
@@ -564,16 +524,16 @@ st.markdown("- **For OS 9.x:** App 402, App 390, App 325, App 183, App 152, App 
 st.subheader('Revenue Forecasting')
 st.markdown("It is possible to predict revenues for the beginning of 2023 based on the change in daily revenue in 2022. In Figure 21, information about the daily revenues for 2022 and a revenue prediction for the beginning of 2023 are shown:")
 
-x=revenue_df.groupby(['event_date'])['value_usd'].sum().reset_index(name='value_usd')
-x['event_date'] = pd.to_datetime(x['event_date'])
-x.columns = ['ds','y']
-m= prophet.Prophet(yearly_seasonality=True,daily_seasonality=True)
-m.fit(x)
-future = m.make_future_dataframe(periods=30)
-forecast = m.predict(future)
-figxxx = plot_plotly(m,forecast)
-figxxx.update_layout(height=400,width=1100, margin=dict(l=20, r=0, b=0, t=0))
-st.plotly_chart(figxxx)
+daily_total_revenue=revenue_df.groupby(['event_date'])['value_usd'].sum().reset_index(name='value_usd')
+daily_total_revenue['event_date'] = pd.to_datetime(daily_total_revenue['event_date'])
+daily_total_revenue.columns = ['ds','y']
+model= prophet.Prophet(yearly_seasonality=True,daily_seasonality=True)
+model.fit(daily_total_revenue)
+future = model.make_future_dataframe(periods=30)
+forecast = model.predict(future)
+fig21 = plot_plotly(model,forecast)
+fig21.update_layout(height=400,width=1100, margin=dict(l=20, r=0, b=0, t=0))
+st.plotly_chart(fig21)
 st.markdown("<p style='text-align: center;font-style: italic; color: grey;'>Figure 21: Revenue Prediction Graph </p>", unsafe_allow_html=True)
 st.markdown("**Conclusion:** An increase in revenue can be expected at the beginning of 2023 compared to the last weeks of 2022. Especially at the end of 2022, while the daily average revenue is between 500 USD and 1000 USD , it can be predicted that the average daily profit will be between 1000 USD and 1500 USD for the first weeks of 2023.")
 st.markdown("For the revenue prediction, the financial opportunities mentioned before were not included.")
