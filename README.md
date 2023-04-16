@@ -51,7 +51,7 @@ The fees that justDice pays to Mediums for acquiring users, don't have to be pai
 I assumed that justDice advertises its products on Medium 10 and Medium 60. However, Partner apps also can be installed on Medium 10 and Medium 60.<br>
 
 #### NOTE 5
-Partner apps are installed on Medium 1111 and Medium 26. Howeveer justDice also shows their other products in their own apps.<br>
+Partner apps are installed on Medium 1111 and Medium 26(Channels that displayed on justDice apps). However, justDice also shows their other products in their own apps.<br>
 
 
 
