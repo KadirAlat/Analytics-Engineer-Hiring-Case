@@ -1,21 +1,29 @@
-# https://kadiralat-analitic-engineer-task-main-z0hhp6.streamlit.app/
+## justDice Analytics Engineer Hiring Case
 
+### First of all you can open the report via the link below:
 
+#### https://kadiralat-analitic-engineer-task-main-z0hhp6.streamlit.app/
+
+### Notes
+
+#### NOTE 1
 
 Null Value Checking
 There is no null values in adspend.csv,installs.csv,payouts.csv,revenue.csv
+```python
 print(adspend.isnull().values.any()) -> False
 print(installs.isnull().values.any()) -> False
 print(payouts.isnull().values.any()) -> False
 print(revenue.isnull().values.any()) -> False
-
+```
 
 Duplication Check:
 For Adspending there is no duplication
 
-For Payouts and Revenue, there are duplications but when the CSV file is examinated, it can be seen that there are also
-different payout prices for the same day and same installation_id. That means there can be many charges or revenues
-for the same day so, duplications sould not be removed from dataframes for payouts and revenue.
+For Payouts and Revenue, there are duplications but when the CSV file is examinated,
+it can be seen that there are also different payout prices for the same day and same installation_id.
+That means there can be many charges or revenues for the same day so,
+duplications sould not be removed from dataframes for payouts and revenue.
 
 For Installation:
 There is only one duplication in installs dataframe.
