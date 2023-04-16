@@ -2,7 +2,7 @@
 
 ### You can open the report via the link below:
 
-#### https://kadiralat-analitic-engineer-task-main-z0hhp6.streamlit.app/
+#### https://kadiralat-analytics-engineer-hiring-case-main-s01z5k.streamlit.app/
 
 ### Technologies Used In This Task:
 
